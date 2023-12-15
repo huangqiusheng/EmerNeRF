@@ -60,6 +60,7 @@ class WaymoPixelSource(ScenePixelSource):
         # ---- define filepaths ---- #
         img_filepaths, feat_filepaths = [], []
         dynamic_mask_filepaths, sky_mask_filepaths = [], []
+        panoramic_mask_filepaths, panoramic_mask_c_filepaths = [], []
 
         # Note: we assume all the files in waymo dataset are synchronized
         for t in range(self.start_timestep, self.end_timestep):
@@ -75,6 +76,12 @@ class WaymoPixelSource(ScenePixelSource):
                 sky_mask_filepaths.append(
                     os.path.join(self.data_path, "sky_masks", f"{t:03d}_{cam_idx}.png")
                 )
+                panoramic_mask_filepaths.append(
+                    os.path.join(self.data_path, "panoramic_mask", f"{t:03d}_{cam_idx}.npz")
+                )
+                panoramic_mask_c_filepaths.append(
+                    os.path.join(self.data_path, "panoramic_mask_c", f"{t:03d}_{cam_idx}.npz")
+                )
                 feat_filepaths.append(
                     os.path.join(
                         self.data_path,
@@ -86,6 +93,8 @@ class WaymoPixelSource(ScenePixelSource):
         self.dynamic_mask_filepaths = np.array(dynamic_mask_filepaths)
         self.sky_mask_filepaths = np.array(sky_mask_filepaths)
         self.feat_filepaths = np.array(feat_filepaths)
+        self.panoramic_mask_filepaths = np.array(panoramic_mask_filepaths)
+        self.panoramic_mask_c_filepaths = np.array(panoramic_mask_c_filepaths)
 
     def load_calibrations(self):
         """

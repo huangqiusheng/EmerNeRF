@@ -157,6 +157,8 @@ class ScenePixelSource(abc.ABC):
         self.feat_filepaths = []
         self.sky_mask_filepaths = []
         self.dynamic_mask_filepaths = []
+        self.panoramic_mask_filepaths = []
+        self.panoramic_mask_c_filepaths = []
         raise NotImplementedError
 
     @abc.abstractmethod
@@ -173,6 +175,8 @@ class ScenePixelSource(abc.ABC):
         """
         self.load_calibrations()
         self.load_rgb()
+        self.load_semantics()
+        self.load_semantics_confidence()
         self.load_dynamic_mask()
         self.load_sky_mask()
         # self.load_features()
@@ -189,6 +193,10 @@ class ScenePixelSource(abc.ABC):
         self.device = device
         if self.images is not None:
             self.images = self.images.to(device)
+        if self.semantics is not None:
+            self.semantics = self.semantics.to(device)
+        if self.semantics_c is not None:
+            self.semantics_c = self.semantics_c.to(device)
         if self.dynamic_masks is not None:
             self.dynamic_masks = self.dynamic_masks.to(device)
         if self.sky_masks is not None:
@@ -246,6 +254,48 @@ class ScenePixelSource(abc.ABC):
         # normalize the images to [0, 1]
         self.images = torch.from_numpy(np.stack(images, axis=0)) / 255
         self.img_ids = torch.arange(len(self.images)).long()
+
+    def load_semantics(self) -> None:
+        """
+        Load the RGB images if they are available. We cache the images in memory for faster loading.
+        Note this can be memory consuming.
+        """
+        if not self.data_cfg.load_semantic:
+            return
+        semantics = []
+        for fname in tqdm(
+            self.panoramic_mask_filepaths, desc="Loading semantic", dynamic_ncols=True
+        ):
+            semantic = np.load(fname)['arr_0']
+            # resize them to the load_size
+            semantic = torch.nn.functional.interpolate(
+                torch.tensor(semantic.astype(np.int))[None, None, ...].float(), size=(self.data_cfg.load_size[0], self.data_cfg.load_size[1]), mode='nearest')
+            semantic = np.array(semantic)[0,0]
+            semantics.append(semantic)
+        # normalize the images to [0, 1]
+        self.semantics = torch.from_numpy(np.stack(semantics, axis=0)).float()
+        self.seg_ids = torch.arange(len(self.semantics)).long()
+    
+    def load_semantics_confidence(self) -> None:
+        """
+        Load the RGB images if they are available. We cache the images in memory for faster loading.
+        Note this can be memory consuming.
+        """
+        if not self.data_cfg.load_semantic:
+            return
+        semantics_c = []
+        for fname in tqdm(
+            self.panoramic_mask_c_filepaths, desc="Loading semantic confidence", dynamic_ncols=True
+        ):
+            semantic_c = np.load(fname)['arr_0']
+            # resize them to the load_size
+            semantic_c = torch.nn.functional.interpolate(
+                torch.tensor(semantic_c.astype(np.int))[None, None, ...].float(), size=(self.data_cfg.load_size[0], self.data_cfg.load_size[1]), mode='nearest')
+            semantic_c = np.array(semantic_c)[0,0]
+            semantics_c.append(semantic_c)
+        # normalize the images to [0, 1]
+        self.semantics_c = torch.from_numpy(np.stack(semantics_c, axis=0)).float()
+        self.seg_c_ids = torch.arange(len(self.semantics_c)).long()
 
     def load_dynamic_mask(self) -> None:
         """
@@ -678,7 +728,7 @@ class ScenePixelSource(abc.ABC):
         Returns:
             a dict of the sampled rays.
         """
-        rgb, sky_mask, dynamic_mask, features = None, None, None, None
+        rgb, sky_mask, dynamic_mask, features, semantics, semantics_c = None, None, None, None, None, None
         pixel_coords, normalized_timestamps = None, None
         if self.buffer_ratio > 0 and self.pixel_error_buffered:
             num_roi_rays = int(num_rays * self.buffer_ratio)
@@ -703,6 +753,10 @@ class ScenePixelSource(abc.ABC):
             sky_mask = self.sky_masks[img_idx, y, x]
         if self.dynamic_masks is not None:
             dynamic_mask = self.dynamic_masks[img_idx, y, x].float()
+        if self.semantics is not None:
+            semantics = self.semantics[img_idx, y, x].float()
+        if self.semantics_c is not None:
+            semantics_c = self.semantics_c[img_idx, y, x].float()
         if self.features is not None:
             features = self.get_features(
                 img_idx, y, x, downscale=self.featmap_downscale_factor
@@ -727,6 +781,8 @@ class ScenePixelSource(abc.ABC):
             "sky_masks": sky_mask,
             "dynamic_masks": dynamic_mask,
             "features": features,
+            "semantics": semantics,
+            "semantics_c": semantics_c,
         }
         return {k: v for k, v in data.items() if v is not None}
 
@@ -738,7 +794,7 @@ class ScenePixelSource(abc.ABC):
         Returns:
             a dict containing the rays for rendering the given image index.
         """
-        rgb, sky_mask, dynamic_mask, features = None, None, None, None
+        rgb, sky_mask, dynamic_mask, features, semantics, semantics_c = None, None, None, None, None, None
         pixel_coords, normalized_timestamps = None, None
         if self.images is not None:
             rgb = self.images[img_idx]
@@ -795,6 +851,30 @@ class ScenePixelSource(abc.ABC):
                     .squeeze(0)
                     .squeeze(0)
                 )
+        if self.semantics is not None:
+            semantics = self.semantics[img_idx].float()
+            if self.downscale_factor != 1.0:
+                semantics = (
+                    torch.nn.functional.interpolate(
+                        semantics.unsqueeze(0).unsqueeze(0),
+                        scale_factor=self.downscale_factor,
+                        mode="nearest",
+                    )
+                    .squeeze(0)
+                    .squeeze(0)
+                )
+        if self.semantics_c is not None:
+            semantics_c = self.semantics_c[img_idx].float()
+            if self.downscale_factor != 1.0:
+                semantics_c = (
+                    torch.nn.functional.interpolate(
+                        semantics_c.unsqueeze(0).unsqueeze(0),
+                        scale_factor=self.downscale_factor,
+                        mode="nearest",
+                    )
+                    .squeeze(0)
+                    .squeeze(0)
+                )
         if self.features is not None:
             features = self.get_features(
                 img_idx,
@@ -842,6 +922,8 @@ class ScenePixelSource(abc.ABC):
             "sky_masks": sky_mask,
             "dynamic_masks": dynamic_mask,
             "features": features,
+            "semantics": semantics,
+            "semantics_c": semantics_c,
         }
         return {k: v for k, v in data.items() if v is not None}
 

@@ -40,6 +40,10 @@ class RadianceField(nn.Module):
         enable_sky_head: bool = False,
         enable_shadow_head: bool = False,
         enable_feature_head: bool = False,
+        enable_semantic_head: bool = False,
+        use_regress_method: bool = False,
+        instance_class: int = 150,
+        camera_head: int = 1,
         num_train_timesteps: int = 0,
         interpolate_xyz_encoding: bool = False,
         enable_learnable_pe: bool = True,
@@ -216,6 +220,39 @@ class RadianceField(nn.Module):
                     nn.Linear(feature_embedding_dim // 2, feature_embedding_dim),
                 )
 
+        # ======== Semantic Head ======== #
+        self.enable_semantic_head = enable_semantic_head
+        self.instance_class = instance_class
+        self.camera_head = camera_head
+        self.use_regress_method = use_regress_method
+        if self.enable_semantic_head:
+            if camera_head == 1:
+                self.semantic_head = nn.ModuleList()
+                for n_c in range(instance_class):
+                    self.semantic_head.append(
+                        MLP(
+                            in_dims=geometry_feature_dim,
+                            out_dims=1,
+                            num_layers=1,
+                            hidden_dims=head_mlp_layer_width,
+                            skip_connections=[1],
+                        )
+                    )
+            elif camera_head > 1:
+                self.cur_camera_head = 0
+                self.semantic_cams = nn.ModuleDict()
+                for n in range(camera_head):
+                    self.semantic_head = nn.ModuleDict()
+                    for n_c in range(instance_class):
+                        self.semantic_head.append(MLP(
+                            in_dims=geometry_feature_dim,
+                            out_dims=1,
+                            num_layers=3,
+                            hidden_dims=head_mlp_layer_width,
+                            skip_connections=[1],
+                        ))
+                    self.semantic_cams.append(self.semantic_head)
+            
     def register_normalized_training_timesteps(
         self, normalized_timesteps: Tensor, time_diff: float = None
     ) -> None:
@@ -495,6 +532,19 @@ class RadianceField(nn.Module):
                         * (1 - shadow_ratio)
                         + dynamic_ratio[..., None] * results_dict["dynamic_rgb"]
                     )
+            if self.enable_semantic_head:
+                semantic_results = self.query_semantic(
+                    geo_feats, dynamic_geo_feats, data_dict=data_dict
+                )
+                results_dict["dynamic_semantics"] = semantic_results["dynamic_semantics"]
+                results_dict["static_semantics"] = semantic_results["semantics"]
+                if combine_static_dynamic:
+                    static_ratio = static_density / (density + 1e-6)
+                    dynamic_ratio = dynamic_density / (density + 1e-6)
+                    results_dict["semantics"] = (
+                        static_ratio[..., None] * results_dict["static_semantics"]
+                        + dynamic_ratio[..., None] * results_dict["dynamic_semantics"]
+                    )
         else:
             # if no dynamic branch, use static density
             results_dict["density"] = static_density
@@ -504,7 +554,9 @@ class RadianceField(nn.Module):
             if directions is not None:
                 rgb_results = self.query_rgb(directions, geo_feats, data_dict=data_dict)
                 results_dict["rgb"] = rgb_results["rgb"]
-
+            if self.enable_semantic_head:
+                semantic_results = self.query_semantic(geo_feats, data_dict=data_dict)
+                results_dict["semantics"] = semantic_results["semantics"]
         if self.enable_feature_head and query_feature_head:
             if self.enable_learnable_pe and query_pe_head:
                 learnable_pe_map = (
@@ -655,6 +707,49 @@ class RadianceField(nn.Module):
             dynamic_rgb = self.rgb_head(torch.cat([h, dynamic_geo_feats], dim=-1))
             dynamic_rgb = F.sigmoid(dynamic_rgb)
             results["dynamic_rgb"] = dynamic_rgb
+        return results
+    
+    def query_semantic(
+        self,
+        geo_feats: Tensor,
+        dynamic_geo_feats: Tensor = None,
+        data_dict: Dict[str, Tensor] = None,
+    ) -> Tensor:
+        # if self.enable_cam_embedding or self.enable_img_embedding:
+        #     if "cam_idx" in data_dict and self.enable_cam_embedding:
+        #         appearance_embedding = self.appearance_embedding(data_dict["cam_idx"])
+        #     elif "img_idx" in data_dict and self.enable_img_embedding:
+        #         appearance_embedding = self.appearance_embedding(data_dict["img_idx"])
+        #     else:
+        #         # use mean appearance embedding
+        #         # print("using mean appearance embedding")
+        #         appearance_embedding = torch.ones(
+        #             (*directions.shape[:-1], self.appearance_embedding_dim),
+        #             device=directions.device,
+        #         ) * self.appearance_embedding.weight.mean(dim=0)
+        #     h = torch.cat([h, appearance_embedding], dim=-1)
+        def calc_semantic(feats):
+            if self.camera_head == 1:  
+                semantics = []
+                for n_c in range(self.instance_class):
+                    semantics.append(self.semantic_head[n_c](feats))
+                semantics = torch.cat(semantics, dim=-1)
+            elif self.camera_head > 1:
+                semantics = []
+                cur_net = self.semantic_cams[self.cur_camera_head]
+                for n_c in range(self.instance_class):
+                    semantics.append(cur_net[n_c](feats))
+                semantics = torch.cat(semantics, dim=-1)
+
+            semantics = F.sigmoid(semantics)
+            return semantics
+        
+        results = {"semantics": calc_semantic(geo_feats)}
+        if self.dynamic_xyz_encoder is not None:
+            assert (
+                dynamic_geo_feats is not None
+            ), "Dynamic geometry features are not provided."
+            results["dynamic_semantics"] = calc_semantic(dynamic_geo_feats)
         return results
 
     def query_sky(
@@ -935,6 +1030,8 @@ def build_radiance_field_from_cfg(cfg, verbose=True) -> RadianceField:
         appearance_embedding_dim=cfg.head.appearance_embedding_dim,
         enable_sky_head=cfg.head.enable_sky_head,
         enable_feature_head=cfg.head.enable_feature_head,
+        enable_semantic_head=cfg.head.enable_semantic_head,
+        instance_class=cfg.head.instance_class,
         semantic_feature_dim=cfg.neck.semantic_feature_dim,
         feature_mlp_layer_width=cfg.head.feature_mlp_layer_width,
         feature_embedding_dim=cfg.head.feature_embedding_dim,

@@ -184,6 +184,45 @@ class SkyLoss(Loss):
         loss = self.loss_fn(predictions, sky_mask)
         return self.return_loss(self.name, loss)
 
+class SemanticsLoss(Loss):
+    def __init__(
+        self,
+        loss_type: Literal["l2", "opacity_based"] = "l2",
+        coef: float = 0.01,
+        reduction="mean",
+        check_nan=False,
+    ):
+        super(SemanticsLoss, self).__init__(coef, check_nan, reduction)
+        self.loss_type = loss_type
+        if self.loss_type == "l2":
+            self.loss_fn = F.mse_loss
+        elif self.loss_type == "opacity_based":
+            self.loss_fn = self._binary_entropy_loss
+        else:
+            raise NotImplementedError(f"Unknown loss type: {loss_type}")
+        self.name = f"sky_loss_{self.loss_type}"
+
+    def _binary_entropy_loss(self, opacity: Tensor, sky_mask: Tensor):
+        sky_loss = F.binary_cross_entropy(
+            opacity.squeeze(), 1 - sky_mask.float(), reduction="none"
+        )
+        return sky_loss
+
+    def __call__(
+        self,
+        predictions: Tensor,
+        mask: Tensor,
+        confidence: Tensor
+    ):
+        # note that predictions should be weights if loss_type is weights_based
+        # and opacity if loss_type is opacity_based
+        one_hot = torch.nn.functional.one_hot(mask.long(), predictions.shape[-1]).float()
+        loss = self.loss_fn(predictions, one_hot, reduction='none')
+        loss = (loss * confidence.unsqueeze(-1)).sum()/confidence.sum()
+
+        return self.return_loss(self.name, loss)
+
+
 
 class DepthLoss(Loss):
     """

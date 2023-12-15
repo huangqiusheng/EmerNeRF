@@ -16,11 +16,11 @@ DATE=`date '+%m%d'`
 
 scene_idx=700
 start_timestep=0
-end_timestep=-1
+end_timestep=190
 # reduce num_iters to 8000 for debugging
 num_iters=25000
 
-output_root="./work_dirs/$DATE"
+output_root="./delete/$DATE"
 project=scene_reconstruction
 python train_emernerf.py \
     --config_file configs/default_dynamic.yaml \

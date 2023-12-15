@@ -4,7 +4,7 @@ data:
   scene_idx: 0 # which scene to use, [0, 798] for waymo's training set and [0, 849] for nuscenes's train/val sets, inclusive
   start_timestep: 0 # which timestep to start from
   end_timestep: -1 # which timestep to end at, -1 means the last timestep
-  ray_batch_size: 8192 # ray batch size for training, it's embedded in the dataset class for now
+  ray_batch_size: 4096 # ray batch size for training, it's embedded in the dataset class for now
   preload_device: cuda # choose from ["cpu", "cuda"], cache the data on this device. Will oom if the dataset is too large
   pixel_source: # everything related to "pixels" --- from camera images
     load_size: [640, 960] # [height, width], resize the raw image to this size
@@ -12,10 +12,11 @@ data:
     num_cams: 5 # number of cameras to use, choose from [1, 3, 5] for waymo, [1, 3, 6] for nuscenes. 1: frontal, 3: frontal + frontal_left + frontal_right
     test_image_stride: 0 # use every Nth timestep for the test set. if 0, use all images for training and none for testing
     load_rgb: True  # whether to load rgb images
+    load_semantic: True  # whether to load rgb images
     load_sky_mask: True  # whether to load sky masks. We provide pre-extracted sky masks for waymo and nuscenes on google drive
     load_dynamic_mask: True  # whether to load binary masks for dynamic objects. only available for waymo for now
     load_features: False  # whether to load 2D features from some pretrained model
-    skip_feature_extraction: False # whether to skip loading pre-trained for feature extraction
+    skip_feature_extraction: False # whether to skip logitading pre-trained for feature extraction
     target_feature_dim: 64 # if not null, we will use pca to reduce the dimension of 2D features to this value
     feature_model_type: dinov2_vitb14 # the pretrained model to use. we use dino_vitb8 for dinov1 and dinov2_vitb14 for dinov2, but more models are available
     feature_extraction_stride: 7 # 8 for v1, and 7 for v2
@@ -103,6 +104,11 @@ nerf: # emernerf hyperparameters
       enable_temporal_interpolation: False
       # ======= flow =========== #
       enable_flow_branch: False  # whether to use flow branch
+      # ======= Semantic =========== #
+      enable_semantic_head: True # whether to use semantic head
+      use_regress_method: True
+      instance_class: 200
+      camera_head: 1 # 1 for consistancy
 render: # rendering hyperparameters
   render_chunk_size: 16384 # how many rays to render at a time
   render_novel_trajectory: False # whether to render a predefined novel trajectory after training
@@ -138,6 +144,9 @@ supervision: # supervision hyperparameters
   sky: # sky supervision
     loss_type: opacity_based # choose from ["opacity_based", "weights_based"]
     loss_coef: 0.001
+  semantic:
+    loss_type: l2
+    loss_coef: 0.1
   feature: # feature supervision
     loss_type: l2 # choose from ["l1", "smooth_l1", "l2"]
     loss_coef: 0.5 # didn't do any ablation study on this

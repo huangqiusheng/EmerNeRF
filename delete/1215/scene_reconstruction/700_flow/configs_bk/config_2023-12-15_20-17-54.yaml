@@ -1,0 +1,185 @@
+data:
+  data_root: data/waymo/processed/training
+  dataset: waymo
+  scene_idx: 700
+  start_timestep: 0
+  end_timestep: 190
+  ray_batch_size: 8192
+  preload_device: cuda
+  pixel_source:
+    load_size:
+    - 640
+    - 960
+    downscale: 1
+    num_cams: 5
+    test_image_stride: 0
+    load_rgb: true
+    load_semantic: true
+    load_sky_mask: true
+    load_dynamic_mask: true
+    load_features: false
+    skip_feature_extraction: false
+    target_feature_dim: 64
+    feature_model_type: dinov2_vitb14
+    feature_extraction_stride: 7
+    feature_extraction_size:
+    - 644
+    - 966
+    delete_features_after_run: false
+    sampler:
+      buffer_downscale: 16
+      buffer_ratio: 0.25
+  lidar_source:
+    load_lidar: false
+    only_use_top_lidar: false
+    truncated_max_range: 80
+    truncated_min_range: -2
+    lidar_downsample_factor: 4
+    lidar_percentile: 0.02
+  occ_source:
+    voxel_size: 0.1
+nerf:
+  aabb:
+  - -20.0
+  - -40.0
+  - 0
+  - 80.0
+  - 40.0
+  - 20.0
+  unbounded: true
+  propnet:
+    num_samples_per_prop:
+    - 128
+    - 64
+    near_plane: 0.1
+    far_plane: 1000.0
+    sampling_type: uniform_lindisp
+    enable_anti_aliasing_level_loss: true
+    anti_aliasing_pulse_width:
+    - 0.03
+    - 0.003
+    xyz_encoder:
+      type: HashEncoder
+      n_input_dims: 3
+      n_levels_per_prop:
+      - 8
+      - 8
+      base_resolutions_per_prop:
+      - 16
+      - 16
+      max_resolution_per_prop:
+      - 512
+      - 2048
+      lgo2_hashmap_size_per_prop:
+      - 20
+      - 20
+      n_features_per_level: 1
+    unbounded: true
+  sampling:
+    num_samples: 64
+  model:
+    xyz_encoder:
+      type: HashEncoder
+      n_input_dims: 3
+      n_levels: 10
+      n_features_per_level: 4
+      base_resolution: 16
+      max_resolution: 8192
+      log2_hashmap_size: 20
+    dynamic_xyz_encoder:
+      type: HashEncoder
+      n_input_dims: 4
+      n_levels: 10
+      n_features_per_level: 4
+      base_resolution: 32
+      max_resolution: 8192
+      log2_hashmap_size: 18
+    neck:
+      base_mlp_layer_width: 64
+      geometry_feature_dim: 64
+      semantic_feature_dim: 64
+    head:
+      head_mlp_layer_width: 64
+      enable_cam_embedding: false
+      enable_img_embedding: true
+      appearance_embedding_dim: 16
+      enable_sky_head: true
+      enable_feature_head: false
+      feature_embedding_dim: 64
+      feature_mlp_layer_width: 64
+      enable_learnable_pe: true
+      enable_dynamic_branch: true
+      enable_shadow_head: true
+      interpolate_xyz_encoding: true
+      enable_temporal_interpolation: false
+      enable_flow_branch: false
+      enable_semantic_head: true
+      use_regress_method: true
+      instance_class: 150
+      camera_head: 1
+    num_cams: 5
+    unbounded: true
+    resume_from: null
+render:
+  render_chunk_size: 16384
+  render_novel_trajectory: false
+  fps: 24
+  render_low_res: true
+  render_full: true
+  render_test: true
+  low_res_downscale: 4
+  save_html: false
+  vis_voxel_size: 0.3
+supervision:
+  rgb:
+    loss_type: l2
+    loss_coef: 1.0
+  depth:
+    loss_type: l2
+    enable: true
+    loss_coef: 1.0
+    depth_error_percentile: null
+    line_of_sight:
+      enable: true
+      loss_type: my
+      loss_coef: 0.1
+      start_iter: 2000
+      start_epsilon: 6.0
+      end_epsilon: 2.5
+      decay_steps: 5000
+      decay_rate: 0.5
+  sky:
+    loss_type: opacity_based
+    loss_coef: 0.001
+  semantic:
+    loss_type: l2
+    loss_coef: 0.1
+  feature:
+    loss_type: l2
+    loss_coef: 0.5
+  dynamic:
+    loss_type: sparsity
+    loss_coef: 0.01
+    entropy_loss_skewness: 1.1
+  shadow:
+    loss_type: sparsity
+    loss_coef: 0.01
+optim:
+  num_iters: 25000
+  weight_decay: 1.0e-05
+  lr: 0.01
+  seed: 0
+  check_nan: false
+  cache_rgb_freq: 2000
+logging:
+  vis_freq: 2000
+  print_freq: 200
+  saveckpt_freq: 25000
+  save_seperate_video: true
+resume_from: null
+eval:
+  eval_lidar_flow: false
+  remove_ground_when_eval_lidar_flow: true
+  eval_occ: false
+  occ_annotation_stride: 10
+log_dir: ./delete/1215/scene_reconstruction/700_flow

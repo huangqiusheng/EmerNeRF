@@ -213,6 +213,56 @@ def rendering(
                     values=results["backward_flow"],
                 )
 
+        # =========== RGB =========== #
+    if "semantics" in results:
+        # static-only scene
+        results_dict["semantics"] = accumulate_along_rays(weights, values=results["semantics"])
+    elif "static_semantics" in results and "dynamic_semantics" in results:
+        # default to no shadow
+        # shadow_ratio = 0.0
+        # if "shadow_ratio" in results:
+        #     shadow_ratio = results["shadow_ratio"]
+        #     results_dict["shadow_ratio"] = accumulate_along_rays(
+        #         weights,
+        #         values=shadow_ratio.square(),
+        #     )
+        semantics = (
+            static_ratio[..., None] * results["static_semantics"] * (1 - shadow_ratio)
+            + dynamic_ratio[..., None] * results["dynamic_semantics"]
+        )
+        results_dict["semantics"] = accumulate_along_rays(weights, values=semantics)
+
+        # =========== RGB Decomposition =========== #
+        if return_decomposition:
+            results_dict["static_semantics"] = accumulate_along_rays(
+                static_weights,
+                values=results["static_semantics"],
+            )
+            if "shadow_ratio" in results:
+                # shadow reduced static rgb
+                results_dict["shadow_reduced_static_semantics"] = accumulate_along_rays(
+                    static_weights,
+                    values=results["static_semantics"] * (1 - shadow_ratio),
+                )
+                # shadow-only rgb
+                shadow_only_static_semantics = accumulate_along_rays(
+                    static_weights,
+                    values=results["static_semantics"] * shadow_ratio,
+                )
+                acc_shadow = accumulate_along_rays(weights, values=shadow_ratio)
+                results_dict["shadow_only_static_semantics"] = shadow_only_static_semantics + (
+                    1 - acc_shadow
+                )
+                # results_dict["shadow"] = accumulate_along_rays(
+                #     weights, values=shadow_ratio
+                # )
+
+            dynamic_semantics = accumulate_along_rays(
+                dynamic_weights,
+                values=results["dynamic_semantics"],
+            )
+            results_dict["dynamic_semantics"] = dynamic_semantics
+
     # Sky composition.
     if "rgb_sky" in results:
         results_dict["rgb"] = results_dict["rgb"] + results["rgb_sky"] * (

@@ -568,6 +568,16 @@ def main(args):
         )
     else:
         sky_loss_fn = None
+    
+    if cfg.data.pixel_source.load_semantic and cfg.nerf.model.head.enable_semantic_head:
+        semantics_loss_fn = loss.SemanticsLoss(
+            loss_type=cfg.supervision.semantic.loss_type,
+            coef=cfg.supervision.semantic.loss_coef,
+            check_nan=cfg.optim.check_nan,
+            reduction='none'
+        )
+    else:
+        semantics_loss_fn = None
 
     if cfg.data.pixel_source.load_features and cfg.nerf.model.head.enable_feature_head:
         feature_loss_fn = loss.RealValueLoss(
@@ -677,6 +687,14 @@ def main(args):
                     raise NotImplementedError(
                         f"sky_loss_type {cfg.supervision.sky.loss_type} not implemented"
                     )
+            if semantics_loss_fn is not None:
+                pixel_loss_dict.update(
+                    semantics_loss_fn(
+                        render_results["semantics"],
+                        pixel_data_dict["semantics"],
+                        pixel_data_dict["semantics_c"],
+                    )
+                )
             if feature_loss_fn is not None:
                 pixel_loss_dict.update(
                     feature_loss_fn(
