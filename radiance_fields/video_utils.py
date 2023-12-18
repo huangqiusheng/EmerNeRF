@@ -46,6 +46,72 @@ non_zero_mean: Callable[[Tensor], float] = (
     lambda x: sum(x) / len(x) if len(x) > 0 else -1
 )
 
+def to_img_semantic(tensor: torch.Tensor, is_gt=False):
+    num_class = 200
+    if not is_gt:
+        H, W, num_class = tensor.shape
+    else:
+        H, W = tensor.shape
+    color_mapping_200 = [(174, 53, 103), (51, 197, 5), (125, 174, 79), (216, 180, 33), (40, 98, 236), 
+                    (182, 76, 61), (101, 146, 234), (102, 160, 104), (36, 113, 82), (246, 20, 140), 
+                    (102, 25, 84), (141, 39, 194), (241, 229, 136), (178, 141, 186), (40, 209, 242), 
+                    (187, 255, 192), (70, 156, 181), (11, 198, 120), (241, 79, 33), (232, 98, 18), 
+                    (126, 89, 27), (19, 170, 172), (49, 141, 241), (152, 111, 19), (77, 110, 57), 
+                    (159, 117, 73), (119, 18, 22), (52, 194, 23), (218, 42, 229), (11, 176, 137), 
+                    (95, 43, 144), (98, 102, 210), (145, 209, 108), (12, 139, 57), (122, 239, 209), 
+                    (234, 50, 129), (27, 53, 164), (157, 214, 37), (168, 17, 10), (22, 178, 74), 
+                    (242, 134, 12), (66, 22, 129), (194, 161, 16), (201, 44, 87), (235, 189, 38), 
+                    (202, 59, 143), (195, 112, 34), (23, 76, 132), (231, 57, 209), (86, 114, 161), 
+                    (57, 101, 63), (48, 231, 235), (106, 86, 187), (126, 16, 190), (228, 236, 247), 
+                    (120, 120, 120), (29, 85, 95), (60, 67, 148), (108, 42, 218), (0, 236, 104), 
+                    (238, 134, 73), (243, 165, 184), (139, 58, 51), (75, 1, 91), (148, 52, 4), 
+                    (156, 31, 161), (75, 113, 237), (7, 162, 124), (63, 180, 15), (187, 184, 240), 
+                    (59, 94, 28), (23, 19, 78), (245, 221, 35), (92, 239, 133), (60, 173, 222), 
+                    (197, 138, 41), (129, 238, 41), (148, 114, 97), (204, 13, 57), (78, 162, 220), 
+                    (81, 63, 21), (0, 214, 187), (241, 133, 95), (125, 3, 229), (212, 175, 69), 
+                    (15, 104, 143), (205, 241, 161), (51, 233, 130), (24, 140, 124), (150, 151, 78), 
+                    (92, 80, 221), (195, 155, 193), (2, 17, 244), (109, 5, 148), (34, 30, 214), 
+                    (158, 219, 82), (91, 189, 87), (113, 174, 39), (124, 222, 221), (179, 52, 181), 
+                    (207, 109, 127), (157, 43, 5), (197, 69, 214), (205, 92, 167), (9, 66, 102), 
+                    (128, 2, 243), (234, 36, 40), (137, 129, 255), (119, 98, 151), (89, 157, 17), 
+                    (121, 39, 92), (103, 174, 214), (229, 216, 63), (162, 23, 127), (29, 92, 66), 
+                    (40, 98, 27), (56, 239, 218), (141, 184, 212), (214, 139, 210), (136, 228, 76), 
+                    (105, 21, 18), (92, 195, 206), (68, 25, 238), (130, 175, 194), (82, 188, 224), 
+                    (70, 184, 25), (97, 107, 40), (195, 124, 51), (206, 165, 223), (125, 11, 199), 
+                    (128, 179, 216), (16, 75, 25), (68, 26, 191), (136, 165, 175), (24, 179, 154), 
+                    (171, 126, 204), (167, 30, 234), (197, 230, 99), (3, 134, 207), (207, 89, 239), 
+                    (224, 38, 51), (6, 42, 150), (154, 123, 158), (219, 161, 173), (202, 33, 72), 
+                    (30, 55, 131), (200, 200, 200), (112, 115, 107), (149, 236, 53), (115, 50, 245), 
+                    (109, 15, 209), (21, 76, 175), (169, 193, 197), (114, 190, 132), (134, 21, 11), 
+                    (227, 12, 231), (78, 227, 192), (80, 32, 115), (99, 87, 62), (46, 156, 93), 
+                    (102, 97, 148), (72, 190, 78), (214, 170, 243), (251, 159, 28), (107, 160, 163), 
+                    (3, 19, 42), (61, 105, 85), (219, 50, 217), (175, 105, 38), (255, 86, 175), 
+                    (207, 232, 59), (130, 175, 140), (64, 125, 127), (236, 64, 24), (89, 224, 160), 
+                    (19, 70, 31), (219, 1, 17), (161, 193, 120), (35, 15, 109), (180, 245, 97), 
+                    (153, 247, 106), (19, 101, 148), (194, 150, 11), (164, 245, 238), (209, 231, 57), 
+                    (144, 119, 235), (214, 104, 152), (228, 221, 17), (48, 129, 194), (43, 21, 143), 
+                    (17, 117, 65), (87, 160, 220), (109, 25, 75), (137, 23, 225), (102, 52, 175), 
+                    (168, 84, 67), (237, 47, 218), (48, 173, 36), (238, 100, 199), (139, 230, 243), 
+                    (29, 124, 148), (99, 136, 201), (24, 12, 191), (147, 110, 94), (148, 131, 69)]
+    
+    color_mapping = torch.tensor(color_mapping_200[:num_class], dtype=torch.float).reshape(-1,3)/255.0
+
+    
+    if is_gt:
+        one_hot_tensor = torch.nn.functional.one_hot(tensor.long().cpu(), num_class).float()
+        rgb_image = one_hot_tensor@color_mapping
+        return rgb_image.reshape([H, W, -1]).data.cpu() 
+    else:
+        softmax_tensor = torch.relu(torch.sign(tensor-0.5))
+        # let the wrong cases to background class
+        bg_bias = torch.cat([torch.zeros_like(softmax_tensor[..., :1]),softmax_tensor[..., :1].tile(1, num_class-1)], -1)
+        softmax_tensor = torch.relu(softmax_tensor - bg_bias)
+
+        softmax_tensor = tensor
+        one_hot_tensor = torch.nn.functional.one_hot(torch.argmax(softmax_tensor, dim=-1).long().cpu(), num_class).float()
+        rgb_image = one_hot_tensor@color_mapping
+        
+        return rgb_image.reshape([H, W, -1]).data.cpu()
 
 def render_pixels(
     cfg: OmegaConf,
@@ -125,6 +191,11 @@ def render(
     static_rgbs, dynamic_rgbs = [], []
     shadow_reduced_static_rgbs, shadow_only_static_rgbs = [], []
 
+    # rgbs
+    semantics, gt_semantics = [], []
+    static_semantics, dynamic_semantics = [], []
+    shadow_reduced_static_semantics, shadow_only_static_semantics = [], []
+
     # depths
     depths, median_depths = [], []
     static_depths, static_opacities = [], []
@@ -181,6 +252,10 @@ def render(
                 shadow_only_static_rgbs.append(
                     get_numpy(results["shadow_only_static_rgb"])
                 )
+            if "shadow_only_static_semantics" in results:
+                shadow_only_static_semantics.append(
+                    get_numpy(to_img_semantic(results["shadow_only_static_semantics"]))
+                )
             if "forward_flow" in results:
                 forward_flows.append(flow_visualizer(results["forward_flow"]))
             if "backward_flow" in results:
@@ -198,6 +273,32 @@ def render(
                 dynamic_opacities.append(get_numpy(results["dynamic_opacity"]))
             elif "median_depth" in results:
                 median_depths.append(get_numpy(results["median_depth"]))
+            # -------------- semantics -----------------#
+            semantic = results['semantics']
+            semantic = to_img_semantic(semantic) # turn to the RGB value
+            semantics.append(semantic)
+            if "semantics" in data_dict:
+                semantics_gt = to_img_semantic(data_dict["semantics"], True)
+                gt_semantics.append(get_numpy(semantics_gt))
+            if "static_semantics" in results:
+                static_semantics.append(get_numpy(to_img_semantic(results["static_semantics"])))
+            if "dynamic_semantics" in results:
+                # green screen blending for better visualization
+                green_background = torch.tensor([0.0, 177, 64]) / 255.0
+                green_background = green_background.to(results["dynamic_semantics"].device)
+                dy_semantic = to_img_semantic(results["dynamic_semantics"]) * results[
+                    "dynamic_opacity"
+                ] + green_background * (1 - results["dynamic_opacity"])
+                dynamic_semantics.append(get_numpy(dy_semantic))
+            if "shadow_reduced_static_semantics" in results:
+                shadow_reduced_static_semantics.append(
+                    get_numpy(to_img_semantic(results["shadow_reduced_static_semantics"]))
+                )
+            if "shadow_only_static_semantics" in results:
+                shadow_only_static_semantics.append(
+                    get_numpy(to_img_semantic(results["shadow_only_static_semantics"]))
+                )
+
             # -------- sky -------- #
             if "sky_masks" in data_dict:
                 sky_masks.append(get_numpy(data_dict["sky_masks"]))
@@ -429,6 +530,11 @@ def render(
     results_dict["rgbs"] = rgbs
     results_dict["static_rgbs"] = static_rgbs
     results_dict["dynamic_rgbs"] = dynamic_rgbs
+
+    results_dict["semantics"] = semantics
+    results_dict["static_semantics"] = static_semantics
+    results_dict["dynamic_semantics"] = dynamic_semantics
+
     results_dict["depths"] = depths
     results_dict["opacities"] = opacities
     results_dict["static_depths"] = static_depths
@@ -437,6 +543,8 @@ def render(
     results_dict["dynamic_opacities"] = dynamic_opacities
     if len(gt_rgbs) > 0:
         results_dict["gt_rgbs"] = gt_rgbs
+    if len(gt_semantics) > 0:
+        results_dict["gt_semantics"] = gt_semantics
     if len(sky_masks) > 0:
         results_dict["gt_sky_masks"] = sky_masks
     if len(pred_dinos) > 0:
@@ -465,6 +573,11 @@ def render(
         results_dict["backward_flows"] = backward_flows
     if len(median_depths) > 0:
         results_dict["median_depths"] = median_depths
+
+    if len(shadow_reduced_static_semantics) > 0:
+        results_dict["shadow_reduced_static_semantics"] = shadow_reduced_static_semantics
+    if len(shadow_only_static_semantics) > 0:
+        results_dict["shadow_only_static_semantics"] = shadow_only_static_semantics
     return results_dict
 
 

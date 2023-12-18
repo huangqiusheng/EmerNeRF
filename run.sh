@@ -27,6 +27,7 @@ python train_emernerf.py \
     --output_root $output_root \
     --project $project \
     --run_name ${scene_idx}_flow \
+    --enable_wandb \
     data.scene_idx=$scene_idx \
     data.start_timestep=$start_timestep \
     data.end_timestep=$end_timestep \

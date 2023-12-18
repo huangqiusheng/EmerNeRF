@@ -110,13 +110,13 @@ nerf: # emernerf hyperparameters
       instance_class: 200
       camera_head: 1 # 1 for consistancy
 render: # rendering hyperparameters
-  render_chunk_size: 16384 # how many rays to render at a time
+  render_chunk_size: 1000 #16384 # how many rays to render at a time
   render_novel_trajectory: False # whether to render a predefined novel trajectory after training
   fps: 24 # fps for the rendered video
   render_low_res: True # whether to render low-res video for preview after training
   render_full: True # whether to render full-set video (train&test set) after training 
   render_test: True # whether to render test set after training
-  low_res_downscale: 4 # downscale factor for the low-res video
+  low_res_downscale: 8 # downscale factor for the low-res video
   save_html: False # whether to save html visualization of voxels
   vis_voxel_size: 0.3 # voxel size for visualization
 supervision: # supervision hyperparameters

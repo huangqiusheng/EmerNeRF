@@ -46,6 +46,10 @@ render_keys = [
     "dynamic_rgb_on_static_dinos",
     "dino_pe",
     "dino_feats_pe_free",
+    "semantics",
+    "gt_semantics",
+    "static_semantics",
+    "dynamic_semantics"
     # "dynamic_dino_on_static_rgbs",
     # "shadow_reduced_static_rgbs",
     # "shadow_only_static_rgbs",
@@ -968,7 +972,7 @@ def main(args):
                         proposal_networks=proposal_networks,
                         proposal_estimator=proposal_estimator,
                         dataset=dataset.full_pixel_set,
-                        compute_metrics=True,
+                        compute_metrics=False,
                         vis_indices=[
                             vis_timestep * dataset.pixel_source.num_cams + i
                             for i in range(dataset.pixel_source.num_cams)

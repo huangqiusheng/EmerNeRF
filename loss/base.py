@@ -200,7 +200,7 @@ class SemanticsLoss(Loss):
             self.loss_fn = self._binary_entropy_loss
         else:
             raise NotImplementedError(f"Unknown loss type: {loss_type}")
-        self.name = f"sky_loss_{self.loss_type}"
+        self.name = f"semantic_loss_{self.loss_type}"
 
     def _binary_entropy_loss(self, opacity: Tensor, sky_mask: Tensor):
         sky_loss = F.binary_cross_entropy(

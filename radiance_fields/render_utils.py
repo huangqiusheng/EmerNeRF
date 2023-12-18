@@ -424,6 +424,10 @@ def render_rays(
         )
         extras = chunk_results_dict.pop("extras")
         results.append(chunk_results_dict)
+    if not results[0]['rgb'].requires_grad:
+        for r in results:
+            for k in r:
+                r[k] = r[k].cpu()
     render_results = collate(
         results,
         collate_fn_map={
