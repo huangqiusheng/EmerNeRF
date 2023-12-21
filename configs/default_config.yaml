@@ -143,8 +143,8 @@ supervision: # supervision hyperparameters
       decay_rate: 0.5 # decay rate for loss_coef
   depth_norm: # depth supervision
     loss_type: l2 # choose from ["l1", "smooth_l1", "l2"]
-    enable: False # whether to use depth supervision
-    loss_coef: 1.0 # didn't do any ablation study on this
+    enable: True # whether to use depth supervision
+    loss_coef: 0.001 # didn't do any ablation study on this
   sky: # sky supervision
     loss_type: opacity_based # choose from ["opacity_based", "weights_based"]
     loss_coef: 0.001

@@ -231,7 +231,7 @@ class DepthNormLoss(Loss):
         check_nan=False,
         class_num=200
     ):
-        super(SemanticsLoss, self).__init__(coef, check_nan, reduction)
+        super(DepthNormLoss, self).__init__(coef, check_nan, reduction)
         self.loss_type = loss_type
         if self.loss_type == "l2":
             self.loss_fn = F.mse_loss
@@ -261,14 +261,14 @@ class DepthNormLoss(Loss):
         confidence = confidence.view(-1,1)
 
 
-        mask = mask.tile(1, self.class_num) # [HW,C]
-        class_per_channel = torch.arange(self.class_num).view(1, -1).tile(depth.shape[0],1) # [HW,C]
+        mask = mask.tile(1, self.class_num-1) # [HW,C]
+        class_per_channel = torch.arange(1, self.class_num).view(1, -1).tile(depth.shape[0],1).to(mask.device) # [HW,C]
         # turn the number into 0/1
         mask_01 = (mask==class_per_channel).float() * confidence
-        depth = depth.tile(1, self.class_num) # [HW,C]
+        depth = depth.tile(1, self.class_num-1) # [HW,C]
         depth_per_class = depth * mask_01
 
-        mean_per_calss = depth_per_class.sum(0)/mask_01.sum(0)
+        mean_per_calss = (depth_per_class.sum(0)/(1.0+mask_01.sum(0))).view(1,-1).tile(depth.shape[0],1)
 
         # make a mask, keep the value less than mean, only calculate the value more than mean
         mask_keep_small = (depth_per_class > mean_per_calss).float()

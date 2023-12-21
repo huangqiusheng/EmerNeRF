@@ -25,6 +25,8 @@ from third_party.nerfacc_prop_net import PropNetEstimator, get_proposal_requires
 from utils.logging import MetricLogger, setup_logging
 from utils.visualization_tools import visualize_voxels, visualize_scene_flow, visualize_pointscloud, visualize_pointscloud_wholeScene
 
+os.environ["PYTORCH_CUDA_ALLOC_CONF"]="max_split_size_mb:16"
+
 logger = logging.getLogger()
 current_time = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())
 
@@ -607,7 +609,7 @@ def main(args):
         )
         if cfg.supervision.depth_norm.enable:
             depth_norm_loss_fn = loss.DepthNormLoss(
-                loss_type=cfg.supervision.depth.line_of_sight.loss_type,
+                loss_type=cfg.supervision.depth_norm.loss_type,
                 coef=cfg.supervision.depth.line_of_sight.loss_coef,
                 check_nan=cfg.optim.check_nan,
                 reduction='none'

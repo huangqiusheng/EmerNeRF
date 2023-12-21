@@ -20,7 +20,7 @@ end_timestep=190
 # reduce num_iters to 8000 for debugging
 num_iters=25000
 
-output_root="./flow/$DATE"
+output_root="./work_dirs/debug_0001/$DATE"
 project=scene_reconstruction
 python train_emernerf.py \
     --config_file configs/default_dynamic.yaml \
