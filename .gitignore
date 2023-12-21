@@ -170,6 +170,7 @@ local_scripts/
 package_hacks/
 delete/
 work_dirs/
+wandb/
 # caches 
 *.pyc
 *.swp

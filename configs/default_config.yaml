@@ -103,7 +103,7 @@ nerf: # emernerf hyperparameters
       interpolate_xyz_encoding: True
       enable_temporal_interpolation: False
       # ======= flow =========== #
-      enable_flow_branch: False  # whether to use flow branch
+      enable_flow_branch: True  # whether to use flow branch
       # ======= Semantic =========== #
       enable_semantic_head: True # whether to use semantic head
       use_regress_method: True
@@ -141,12 +141,16 @@ supervision: # supervision hyperparameters
       end_epsilon: 2.5 # final epsilon for line-of-sight loss
       decay_steps: 5000 # how many steps to decay loss_coef
       decay_rate: 0.5 # decay rate for loss_coef
+  depth_norm: # depth supervision
+    loss_type: l2 # choose from ["l1", "smooth_l1", "l2"]
+    enable: False # whether to use depth supervision
+    loss_coef: 1.0 # didn't do any ablation study on this
   sky: # sky supervision
     loss_type: opacity_based # choose from ["opacity_based", "weights_based"]
     loss_coef: 0.001
   semantic:
     loss_type: l2
-    loss_coef: 0.1
+    loss_coef: 1.0
   feature: # feature supervision
     loss_type: l2 # choose from ["l1", "smooth_l1", "l2"]
     loss_coef: 0.5 # didn't do any ablation study on this

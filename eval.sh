@@ -20,18 +20,24 @@ end_timestep=190
 # reduce num_iters to 8000 for debugging
 num_iters=25000
 
-output_root="./flow/$DATE"
+output_root="./delete_1/$DATE"
 project=scene_reconstruction
 python train_emernerf.py \
     --config_file configs/default_dynamic.yaml \
     --output_root $output_root \
     --project $project \
     --run_name ${scene_idx}_flow \
+    --eval_only \
+    --visualize_voxel \
+    --visualize_pcws \
     data.scene_idx=$scene_idx \
     data.start_timestep=$start_timestep \
     data.end_timestep=$end_timestep \
     logging.saveckpt_freq=$num_iters \
-    optim.num_iters=$num_iters
+    optim.num_iters=$num_iters\
+    resume_from='delete_1/1219/scene_reconstruction/700_flow/checkpoint_25000.pth'\
+    render.render_chunk_size=10000\
+    render.low_res_downscale=16
     # data.pixel_source.load_features=False \
     # data.pixel_source.feature_model_type=dinov2_vitb14 \
     # nerf.model.head.enable_feature_head=True \

@@ -222,7 +222,61 @@ class SemanticsLoss(Loss):
 
         return self.return_loss(self.name, loss)
 
+class DepthNormLoss(Loss):
+    def __init__(
+        self,
+        loss_type: Literal["l2", "opacity_based"] = "l2",
+        coef: float = 0.01,
+        reduction="mean",
+        check_nan=False,
+        class_num=200
+    ):
+        super(SemanticsLoss, self).__init__(coef, check_nan, reduction)
+        self.loss_type = loss_type
+        if self.loss_type == "l2":
+            self.loss_fn = F.mse_loss
+        elif self.loss_type == "opacity_based":
+            self.loss_fn = self._binary_entropy_loss
+        else:
+            raise NotImplementedError(f"Unknown loss type: {loss_type}")
+        self.name = f"depth_norm_loss_{self.loss_type}"
+        self.class_num = class_num
 
+    def _binary_entropy_loss(self, opacity: Tensor, sky_mask: Tensor):
+        sky_loss = F.binary_cross_entropy(
+            opacity.squeeze(), 1 - sky_mask.float(), reduction="none"
+        )
+        return sky_loss
+
+    def __call__(
+        self,
+        depth: Tensor,
+        mask: Tensor,
+        confidence: Tensor
+    ):
+        # note that predictions should be weights if loss_type is weights_based
+        # and opacity if loss_type is opacity_based
+        depth = depth.view(-1,1)
+        mask = mask.view(-1, 1)
+        confidence = confidence.view(-1,1)
+
+
+        mask = mask.tile(1, self.class_num) # [HW,C]
+        class_per_channel = torch.arange(self.class_num).view(1, -1).tile(depth.shape[0],1) # [HW,C]
+        # turn the number into 0/1
+        mask_01 = (mask==class_per_channel).float() * confidence
+        depth = depth.tile(1, self.class_num) # [HW,C]
+        depth_per_class = depth * mask_01
+
+        mean_per_calss = depth_per_class.sum(0)/mask_01.sum(0)
+
+        # make a mask, keep the value less than mean, only calculate the value more than mean
+        mask_keep_small = (depth_per_class > mean_per_calss).float()
+
+        loss = ((depth_per_class - mean_per_calss)*mask_keep_small)**2
+        loss = loss.sum()/mask_keep_small.sum()
+
+        return self.return_loss(self.name, loss)
 
 class DepthLoss(Loss):
     """

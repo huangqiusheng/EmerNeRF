@@ -21,17 +21,315 @@ from third_party.nerfacc_prop_net import PropNetEstimator
 from utils.misc import get_robust_pca
 from utils.misc import NumpyEncoder
 
+import plyfile
 DEFAULT_TRANSITIONS = (15, 6, 4, 11, 13, 6)
 
 logger = logging.getLogger()
 turbo_cmap = cm.get_cmap("turbo")
 
+from sklearn.cluster import DBSCAN
+    
+camera_list_global = ['camera_SIDE_LEFT', 'camera_FRONT_LEFT', 'camera_FRONT', 'camera_FRONT_RIGHT', 'camera_SIDE_RIGHT']
+    
+def export_pcl_ply(pcl: np.ndarray, pcl_color: np.ndarray = None, filepath: str = ...):
+    """
+    pcl_color: if provided, should be uint8_t
+    """
+    num_pts = pcl.shape[0]
+    if pcl_color is not None:
+        verts_tuple = np.zeros((num_pts,), dtype=[(
+            "x", "f4"), ("y", "f4"), ("z", "f4"), ("red", "u1"), ("green", "u1"), ("blue", "u1")])
+        data = [tuple(p1.tolist() + p2.tolist()) for p1, p2 in zip(pcl, pcl_color)]
+        verts_tuple[:] = data[:]
+    else:
+        verts_tuple = np.zeros((num_pts,), dtype=[("x", "f4"), ("y", "f4"), ("z", "f4")])
+        data = [tuple(p.tolist()) for p in pcl]
+        verts_tuple[:] = data[:]
+
+    el_verts = plyfile.PlyElement.describe(verts_tuple, "vertex")
+    ply_data = plyfile.PlyData([el_verts])
+    print(f"=> Saving pointclouds to {str(filepath)}")
+    ply_data.write(filepath)
+
+def to_img_semantic(tensor: torch.Tensor, is_gt=False, is_one_hot=False):
+    num_class = 200
+    if not is_gt:
+        HW, num_class = tensor.shape
+    else:
+        HW = tensor.shape
+    color_mapping_200 = [(174, 53, 103), (51, 197, 5), (125, 174, 79), (216, 180, 33), (40, 98, 236), 
+                    (182, 76, 61), (101, 146, 234), (102, 160, 104), (36, 113, 82), (246, 20, 140), 
+                    (102, 25, 84), (141, 39, 194), (241, 229, 136), (178, 141, 186), (40, 209, 242), 
+                    (187, 255, 192), (70, 156, 181), (11, 198, 120), (241, 79, 33), (232, 98, 18), 
+                    (126, 89, 27), (19, 170, 172), (49, 141, 241), (152, 111, 19), (77, 110, 57), 
+                    (159, 117, 73), (119, 18, 22), (52, 194, 23), (218, 42, 229), (11, 176, 137), 
+                    (95, 43, 144), (98, 102, 210), (145, 209, 108), (12, 139, 57), (122, 239, 209), 
+                    (234, 50, 129), (27, 53, 164), (157, 214, 37), (168, 17, 10), (22, 178, 74), 
+                    (242, 134, 12), (66, 22, 129), (194, 161, 16), (201, 44, 87), (235, 189, 38), 
+                    (202, 59, 143), (195, 112, 34), (23, 76, 132), (231, 57, 209), (86, 114, 161), 
+                    (57, 101, 63), (48, 231, 235), (106, 86, 187), (126, 16, 190), (228, 236, 247), 
+                    (120, 120, 120), (29, 85, 95), (60, 67, 148), (108, 42, 218), (0, 236, 104), 
+                    (238, 134, 73), (243, 165, 184), (139, 58, 51), (75, 1, 91), (148, 52, 4), 
+                    (156, 31, 161), (75, 113, 237), (7, 162, 124), (63, 180, 15), (187, 184, 240), 
+                    (59, 94, 28), (23, 19, 78), (245, 221, 35), (92, 239, 133), (60, 173, 222), 
+                    (197, 138, 41), (129, 238, 41), (148, 114, 97), (204, 13, 57), (78, 162, 220), 
+                    (81, 63, 21), (0, 214, 187), (241, 133, 95), (125, 3, 229), (212, 175, 69), 
+                    (15, 104, 143), (205, 241, 161), (51, 233, 130), (24, 140, 124), (150, 151, 78), 
+                    (92, 80, 221), (195, 155, 193), (2, 17, 244), (109, 5, 148), (34, 30, 214), 
+                    (158, 219, 82), (91, 189, 87), (113, 174, 39), (124, 222, 221), (179, 52, 181), 
+                    (207, 109, 127), (157, 43, 5), (197, 69, 214), (205, 92, 167), (9, 66, 102), 
+                    (128, 2, 243), (234, 36, 40), (137, 129, 255), (119, 98, 151), (89, 157, 17), 
+                    (121, 39, 92), (103, 174, 214), (229, 216, 63), (162, 23, 127), (29, 92, 66), 
+                    (40, 98, 27), (56, 239, 218), (141, 184, 212), (214, 139, 210), (136, 228, 76), 
+                    (105, 21, 18), (92, 195, 206), (68, 25, 238), (130, 175, 194), (82, 188, 224), 
+                    (70, 184, 25), (97, 107, 40), (195, 124, 51), (206, 165, 223), (125, 11, 199), 
+                    (128, 179, 216), (16, 75, 25), (68, 26, 191), (136, 165, 175), (24, 179, 154), 
+                    (171, 126, 204), (167, 30, 234), (197, 230, 99), (3, 134, 207), (207, 89, 239), 
+                    (224, 38, 51), (6, 42, 150), (154, 123, 158), (219, 161, 173), (202, 33, 72), 
+                    (30, 55, 131), (200, 200, 200), (112, 115, 107), (149, 236, 53), (115, 50, 245), 
+                    (109, 15, 209), (21, 76, 175), (169, 193, 197), (114, 190, 132), (134, 21, 11), 
+                    (227, 12, 231), (78, 227, 192), (80, 32, 115), (99, 87, 62), (46, 156, 93), 
+                    (102, 97, 148), (72, 190, 78), (214, 170, 243), (251, 159, 28), (107, 160, 163), 
+                    (3, 19, 42), (61, 105, 85), (219, 50, 217), (175, 105, 38), (255, 86, 175), 
+                    (207, 232, 59), (130, 175, 140), (64, 125, 127), (236, 64, 24), (89, 224, 160), 
+                    (19, 70, 31), (219, 1, 17), (161, 193, 120), (35, 15, 109), (180, 245, 97), 
+                    (153, 247, 106), (19, 101, 148), (194, 150, 11), (164, 245, 238), (209, 231, 57), 
+                    (144, 119, 235), (214, 104, 152), (228, 221, 17), (48, 129, 194), (43, 21, 143), 
+                    (17, 117, 65), (87, 160, 220), (109, 25, 75), (137, 23, 225), (102, 52, 175), 
+                    (168, 84, 67), (237, 47, 218), (48, 173, 36), (238, 100, 199), (139, 230, 243), 
+                    (29, 124, 148), (99, 136, 201), (24, 12, 191), (147, 110, 94), (148, 131, 69)]
+    color_mapping = color_mapping_200[:num_class]
+    color_mapping = torch.tensor(color_mapping, dtype=torch.float, device=tensor.device).reshape(-1,3)/255.0
+    
+    
+    if is_gt:
+        class_i = tensor.long()
+        one_hot_tensor = torch.nn.functional.one_hot(class_i, num_class).float()
+    else:
+        if is_one_hot:
+            softmax_tensor = tensor
+        else:
+            softmax_tensor = torch.relu(torch.sign(tensor-0.5))
+            # let the wrong cases to background class
+            bg_bias = torch.cat([torch.zeros_like(softmax_tensor[..., :1]),softmax_tensor[..., :1].tile(1, num_class-1)], -1)
+            softmax_tensor = torch.relu(softmax_tensor - bg_bias)
+        
+        class_i = torch.argmax(softmax_tensor, dim=-1).long()
+        one_hot_tensor = torch.nn.functional.one_hot(class_i, num_class).float()
+    rgb_image = one_hot_tensor@color_mapping
+    return rgb_image, class_i.reshape([HW, 1]) #.reshape([-1, 3]).data.cpu().movedim(-1,0) #tensor.reshape([cam.intr.H, cam.intr.W, -1]).data.cpu().movedim(-1,0) # [C,H,W]
+
+def remove_selected_points(pts_pred: torch.Tensor, class_name=0, is_one_hot=False, num_class_=200):
+    # pts: [N,60]
+    if is_one_hot:
+        softmax_tensor = pts_pred
+    else:
+        softmax_tensor = torch.relu(torch.sign(pts_pred-0.5))
+        # let the wrong cases to background class
+        bg_bias = torch.cat([torch.zeros_like(softmax_tensor[..., :1]),softmax_tensor[..., :1].tile(1, num_class_-1)], -1)
+        softmax_tensor = torch.relu(softmax_tensor - bg_bias)
+    one_num = torch.argmax(softmax_tensor, dim=-1).long() # [N,60]
+    # remove the points of the selected class
+    valid = one_num != class_name
+    return valid
+
+def keep_selected_points(pts_pred: torch.Tensor, class_name=0, is_one_hot=False, num_class_=200):
+    # pts: [N,60]
+    if is_one_hot:
+        softmax_tensor = pts_pred
+    else:
+        softmax_tensor = torch.relu(torch.sign(pts_pred-0.5))
+        # let the wrong cases to background class
+        bg_bias = torch.cat([torch.zeros_like(softmax_tensor[..., :1]),softmax_tensor[..., :1].tile(1, num_class_-1)], -1)
+        softmax_tensor = torch.relu(softmax_tensor - bg_bias)
+    one_num = torch.argmax(softmax_tensor, dim=-1).long() # [N,60]
+    # remove the points of the selected class
+    valid = one_num == class_name
+    return valid
+   
+def save_npz_xyzirgb(pts: torch.Tensor, pts_color: torch.Tensor, pts_color_i: torch.Tensor, vid_root, name='xyzirgb.npz'):
+    output_file_path_npz = os.path.join(vid_root, name)
+    npz_data = torch.cat([pts, pts_color_i, pts_color], dim=-1).cpu()
+    np.savez_compressed(output_file_path_npz, np.array(npz_data)) # 
+    
+def z_score_selection_for_pointcloud(pts: torch.Tensor, pts_color: torch.Tensor, thre=torch.tensor([1.0,1.5,1.0], device='cuda'), class_num=200, repeat=1):
+    # Remove outliers
+    # pts: [N,3]
+    for j in range(repeat):
+        new_res_pts = []
+        new_res_pts_color = []
+        for i in range(1, class_num):
+            valid = keep_selected_points(pts_color, i)
+            pts_cur_class = pts[valid]
+            pts_color_cur_class = pts_color[valid]
+            mean = pts_cur_class.mean(dim=0, keepdim=True)
+            std = pts_cur_class.std(dim=0, keepdim=True)
+            # valid = (pts - mean).norm(dim=-1) < thre * std
+            z_score = (pts_cur_class - mean) / std
+            outlier_indices_x = z_score.abs() < thre[0]
+            outlier_indices_y = z_score.abs() < thre[1]
+            outlier_indices_z = z_score.abs() < thre[2]
+            outlier_indices = outlier_indices_x[:,0] * outlier_indices_y[:,1] * outlier_indices_z[:,2] 
+            # debug
+            # cor = ['x', 'y', 'z']
+            # for j in range(3):
+            #     # Create a histogram of the data
+            #     plt.hist(z_score[:,j].abs().cpu().numpy(), bins=100)
+
+            #     # Add labels and title
+            #     plt.xlabel('Value')
+            #     plt.ylabel('Frequency')
+            #     plt.title('Data Distribution')
+
+            #     # Save the plot as an image as name x, y, z
+            #     plt.savefig('./'+cor[j]+'/class'+str(i)+'_'+cor[j]+'.png')
+
+            #     plt.close()
+            
+            new_res_pts.append(pts_cur_class[outlier_indices])
+            new_res_pts_color.append(pts_color_cur_class[outlier_indices])
+        all_pts = torch.cat(new_res_pts, dim=0)
+        all_pts_color = torch.cat(new_res_pts_color, dim=0)
+        pts = all_pts
+        pts_color = all_pts_color
+    rgb, calss_i = to_img_semantic(all_pts_color)
+    
+    return all_pts, rgb, calss_i, all_pts_color
+
+def DBSCAN_selection_for_pointcloud(pts: torch.Tensor, pts_color: torch.Tensor, class_num=200, min_s=[5, 5], rad=[0.2, 0.2], thre_num=500):
+    # Remove outliers
+    # pts: [N,3]
+    new_res_pts = []
+    new_res_pts_color = []
+    for i in range(1, class_num):
+        valid = keep_selected_points(pts_color, i)
+        pts_cur_class = pts[valid]
+        if pts_cur_class.shape[0] == 0:
+            continue
+        pts_color_cur_class = pts_color[valid]
+        # 创建DBSCAN对象并设置参数
+        if pts_cur_class.shape[0]>thre_num: # TODO: depth
+            dbscan = DBSCAN(eps=rad[1], min_samples=min_s[1])
+        else:
+            dbscan = DBSCAN(eps=rad[0], min_samples=min_s[0])
+        # 执行DBSCAN聚类算法
+        labels = dbscan.fit_predict(pts_cur_class.cpu()) #.to(pts.device)
+
+        # 获取异常点的索引
+        outlier_indices = labels != -1
+        # filtered_point_cloud = np.delete(pts_cur_class, outlier_indices, axis=0)
+        
+        new_res_pts.append(pts_cur_class[outlier_indices])
+        new_res_pts_color.append(pts_color_cur_class[outlier_indices])
+    all_pts = torch.cat(new_res_pts, dim=0)
+    all_pts_color = torch.cat(new_res_pts_color, dim=0)
+    rgb, calss_i = to_img_semantic(all_pts_color)
+    return all_pts, rgb, calss_i
+
+def check_sphere_intersection(center1, radius1, center2, radius2, margin=0.4):
+    # 计算两个球体之间的距离
+    distance = ((center1 - center2)**2).sum().sqrt()
+    
+    # 判断两个球体是否相交
+    if distance <= radius1 + radius2 - margin:
+        return True
+    else:
+        return False
+    
+def merge_pcl(merged_pcl, merged_pcl_color, new_pcl, new_pcl_color, is_one_hot,margin=5):
+    # merged_pcl: [N,3]
+    # merged_pcl_color: [N,60]
+    # new_pcl: [N,3]
+    # new_pcl_color: [N,60]
+    '''
+    1. calculate the center and raduis of the merged_pcl, per class.
+    2. calculate the center and raduis of the new_pcl, per class.
+    3. check if the two spheres intersect, merge the two class if they intersect.
+    4. append the new class of the new_pcl, which not intersect with the merged_pcl.
+    '''
+    
+    # calculate the center and raduis of the merged_pcl, per class. NOTE: the class between merged_pcl and new_pcl is not the same.
+    merged_class_cr = []
+    new_class_cr = []
+    for i in range(1, num_class):
+        valid = keep_selected_points(merged_pcl_color, i, is_one_hot=is_one_hot, num_class_=total_class if is_one_hot else num_class)
+        merged_pcl_cur_class = merged_pcl[valid]
+        if merged_pcl_cur_class.shape[0] != 0:
+            merged_pcl_color_cur_class = merged_pcl_color[valid]
+            # calc the center cordination of the merged_pcl
+            center_ = merged_pcl_cur_class.mean(dim=0)
+            # calc the raduis of the merged_pcl
+            raduis_ = ((merged_pcl_cur_class - center_)**2).sum(dim=1).sqrt().max().view(1)
+            merged_class_cr.append(torch.cat([center_, raduis_, torch.tensor([i], device=center_.device)]))
+        
+        # repeat the above process for the new_pcl
+        valid = keep_selected_points(new_pcl_color, i)
+        new_pcl_cur_class = new_pcl[valid]
+        if new_pcl_cur_class.shape[0] != 0:
+            new_pcl_color_cur_class = new_pcl_color[valid]
+            # calc the center cordination of the new_pcl
+            center_ = new_pcl_cur_class.mean(dim=0)
+            # calc the raduis of the new_pcl
+            raduis_ = ((new_pcl_cur_class - center_)**2).sum(dim=1).sqrt().max().view(1)
+            new_class_cr.append(torch.cat([center_, raduis_, torch.tensor([i], device=center_.device)]))
+            
+    # remake the label class
+    # valid_0 = keep_selected_points(merged_pcl_color, 0, is_one_hot)
+    remerged_pcl = [] #merged_pcl[valid_0]
+    remerged_pcl_color = [] #merged_pcl_color[valid]
+    change_class_i_m = []
+    change_class_i_n = []
+    cur_class_i = 1
+    # add the merged class and remove the part of the origin
+    for i in range(len(merged_class_cr)):
+        for j in range(len(new_class_cr)):
+            # check if the two spheres intersect
+            if check_sphere_intersection(merged_class_cr[i][:3], merged_class_cr[i][3], new_class_cr[j][:3], new_class_cr[j][3], margin=margin):
+                # if the two spheres intersect, then merge the two spheres
+                one_hot_tensor = torch.nn.functional.one_hot(torch.tensor([cur_class_i], device=merged_pcl.device).long(), total_class).float()
+                valid_i_m = keep_selected_points(merged_pcl_color, merged_class_cr[i][4].cpu().item(), is_one_hot=is_one_hot, num_class_=total_class if is_one_hot else num_class)
+                valid_i_n = keep_selected_points(new_pcl_color, new_class_cr[j][4].cpu().item())
+                cur_merged_tmp_pcl = torch.cat([merged_pcl[valid_i_m], new_pcl[valid_i_n]], dim=0)
+                
+                remerged_pcl.append(cur_merged_tmp_pcl)
+                remerged_pcl_color.append(one_hot_tensor.view(1,-1).tile(cur_merged_tmp_pcl.shape[0],1))
+                cur_class_i+=1
+                
+                # remove the merged class
+                remove_valid_i_m = remove_selected_points(merged_pcl_color, merged_class_cr[i][4].cpu().item(), is_one_hot=is_one_hot, num_class_=total_class if is_one_hot else num_class)
+                merged_pcl_color = merged_pcl_color[remove_valid_i_m]
+                merged_pcl = merged_pcl[remove_valid_i_m]
+                remove_valid_i_n = remove_selected_points(new_pcl_color, new_class_cr[j][4].cpu().item())
+                new_pcl_color = new_pcl_color[remove_valid_i_n]
+                new_pcl = new_pcl[remove_valid_i_n]
+                
+                # record the class i
+                change_class_i_m.append(merged_class_cr[i][4].cpu().item())
+                change_class_i_n.append(new_class_cr[j][4].cpu().item())
+                break
+                
+    # append the rest class of the merged_pcl, which not intersect with the new_pcl.
+    for i in range(len(merged_class_cr)):
+        if merged_class_cr[i][4].cpu().item() not in change_class_i_m:
+            one_hot_tensor = torch.nn.functional.one_hot(torch.tensor([cur_class_i], device=merged_pcl.device).long(), total_class).float()
+            valid_i_m = keep_selected_points(merged_pcl_color, merged_class_cr[i][4].cpu().item(), is_one_hot=is_one_hot, num_class_=total_class if is_one_hot else num_class)
+            remerged_pcl.append(merged_pcl[valid_i_m])
+            remerged_pcl_color.append(one_hot_tensor.view(1,-1).tile(merged_pcl[valid_i_m].shape[0],1))
+            cur_class_i+=1
+    # append the rest class of the new_pcl, which not intersect with the merged_pcl.
+    for i in range(len(new_class_cr)):
+        if new_class_cr[i][4].cpu().item() not in change_class_i_n:
+            one_hot_tensor = torch.nn.functional.one_hot(torch.tensor([cur_class_i], device=merged_pcl.device).long(), total_class).float()
+            valid_i_n = keep_selected_points(new_pcl_color, new_class_cr[i][4].cpu().item())
+            remerged_pcl.append(new_pcl[valid_i_n])
+            remerged_pcl_color.append(one_hot_tensor.view(1,-1).tile(new_pcl[valid_i_n].shape[0],1))
+            cur_class_i+=1
+    return torch.cat(remerged_pcl, dim=0), torch.cat(remerged_pcl_color, dim=0)
 
 def to8b(x):
     if isinstance(x, torch.Tensor):
         x = x.detach().cpu().numpy()
     return (255 * np.clip(x, 0, 1)).astype(np.uint8)
-
 
 def resize_five_views(imgs: np.array):
     if len(imgs) != 5:
@@ -47,7 +345,6 @@ def resize_five_views(imgs: np.array):
         new_img = np.clip(new_img, 0, 1)
         imgs[idx] = new_img
     return imgs
-
 
 def sinebow(h):
     """A cyclic and uniform colormap, see http://basecase.org/env/on-rainbows."""
@@ -725,6 +1022,218 @@ def visualize_voxels(
         figure.write_html(output_path)
         logger.info(f"Query result saved to {output_path}")
 
+def visualize_pointscloud(
+    cfg: OmegaConf,
+    model: RadianceField,
+    proposal_estimator: PropNetEstimator = None,
+    proposal_networks: DensityField = None,
+    dataset: SceneDataset = None,
+    device: str = "cuda",
+    save_html: bool = True,
+    is_dynamic: bool = False,
+    denoise_method = 'DBSCAN',
+):
+    model.eval()
+    for p in proposal_networks:
+        p.eval()
+    if proposal_estimator is not None:
+        proposal_estimator.eval()
+    if proposal_networks is not None:
+        for p in proposal_networks:
+            p.eval()
+
+    vis_voxel_aabb = torch.tensor(model.aabb, device=device)
+    # slightly expand the aabb to make sure all points are covered
+    vis_voxel_aabb[1:3] -= 1
+    vis_voxel_aabb[3:] += 1
+    aabb_min, aabb_max = torch.split(vis_voxel_aabb, 3, dim=-1)
+    aabb_length = aabb_max - aabb_min
+
+    # compute the voxel resolution for visualization
+    static_voxel_resolution = torch.ceil(
+        (aabb_max - aabb_min) / cfg.render.vis_voxel_size
+    ).long()
+    empty_static_voxels = torch.zeros(*static_voxel_resolution, device=device)
+    if is_dynamic:
+        # use a slightly smaller voxel size for dynamic voxels
+        dynamic_voxel_resolution = torch.ceil(
+            (aabb_max - aabb_min) / cfg.render.vis_voxel_size * 0.8
+        ).long()
+        all_occupied_dynamic_points = []
+        empty_dynamic_voxels = torch.zeros(*dynamic_voxel_resolution, device=device)
+
+    dataset.pixel_source.update_downscale_factor(1 / cfg.render.low_res_downscale)
+    # collect some patches for PCA
+    to_compute_pca_patches = []
+    # render per frame
+    for j in range(len(dataset.full_pixel_set)//dataset.num_cams):
+        start = j*dataset.num_cams
+        end = (j+1)*dataset.num_cams
+        cam_pcl_ = []
+        cam_pcl_color_ = []
+        for i in range(start, end):
+            data_dict = dataset.full_pixel_set[i]
+            for k, v in data_dict.items():
+                data_dict[k] = v.to(device)
+                # collect all patches from the first timestep
+            with torch.no_grad():
+                render_results = render_rays(
+                    radiance_field=model,
+                    proposal_estimator=proposal_estimator,
+                    proposal_networks=proposal_networks,
+                    data_dict=data_dict,
+                    cfg=cfg,
+                    proposal_requires_grad=False,
+                )
+            # calc the world coords according to the depth
+            depth = render_results["depth"].cuda()
+            world_coords = (
+                data_dict["origins"] + data_dict["viewdirs"] * depth
+            )
+            selected = depth.squeeze() < 80
+            world_coords = world_coords[selected].view(-1,3).cpu()
+            semantics = render_results["semantics"][selected.cpu()]
+            # calc the semantic labels to color
+            semantics = render_results["semantics"] # [H, W, N]
+            # semantics = semantics.view(-1,semantics.shape[-1])
+            semantics = semantics[selected.cpu()]
+            posi_selected = remove_selected_points(semantics, 0)
+            world_coords = world_coords[posi_selected]
+            semantics = semantics[posi_selected]
+            if world_coords.shape[0] == 0:
+                continue
+            cam_pcl_.append(world_coords)
+            cam_pcl_color_.append(semantics)
+        if len(cam_pcl_) == 0:
+            continue
+        vid_root = os.path.join(cfg.log_dir, 'pointcloud')
+        if not os.path.exists(vid_root):
+            os.makedirs(vid_root)
+        # use DBSCAN in current frame
+        # if denoise_method == 'DBSCAN':
+        cam_pcl, cam_pcl_color, cam_pcl_i = DBSCAN_selection_for_pointcloud(torch.cat(cam_pcl_, 0).view(-1,3), torch.cat(cam_pcl_color_, 0), min_s=5, rad=0.2)
+        save_npz_xyzirgb(cam_pcl, (cam_pcl_color.data*255.).clamp_(0., 255.).to(dtype=torch.uint8), cam_pcl_i, vid_root, str(j).zfill(3)+'_xyzirgb_DBSCAN.npz')
+
+        cam_pcl = cam_pcl.data.cpu().numpy()
+        cam_pcl_color = (cam_pcl_color.data*255.).clamp_(0., 255.).to(dtype=torch.uint8).cpu().numpy()
+        export_pcl_ply(cam_pcl, cam_pcl_color, filepath=os.path.join(vid_root, str(j).zfill(3)+'_DBSCAN.ply'))
+        # use zscore
+        # elif denoise_method == 'zscore':
+        # cam_pcl, cam_pcl_color, cam_pcl_i, _ = z_score_selection_for_pointcloud(torch.cat(cam_pcl_, 0).view(-1,3), torch.cat(cam_pcl_color_, 0), torch.tensor([1.5,1.5,1.5], device='cpu'))
+        # save_npz_xyzirgb(cam_pcl, (cam_pcl_color.data*255.).clamp_(0., 255.).to(dtype=torch.uint8), cam_pcl_i, vid_root, str(j).zfill(3)+'_xyzirgb_Zscore.npz')
+
+        # cam_pcl = cam_pcl.data.cpu().numpy()
+        # cam_pcl_color = (cam_pcl_color.data*255.).clamp_(0., 255.).to(dtype=torch.uint8).cpu().numpy()
+        # export_pcl_ply(cam_pcl, cam_pcl_color, filepath=os.path.join(vid_root, str(j).zfill(3)+'_Zcore.ply'))
+        
+def visualize_pointscloud_wholeScene(
+    cfg: OmegaConf,
+    model: RadianceField,
+    proposal_estimator: PropNetEstimator = None,
+    proposal_networks: DensityField = None,
+    dataset: SceneDataset = None,
+    device: str = "cuda",
+    save_html: bool = True,
+    is_dynamic: bool = False,
+    denoise_method = 'DBSCAN',
+):
+    model.eval()
+    for p in proposal_networks:
+        p.eval()
+    if proposal_estimator is not None:
+        proposal_estimator.eval()
+    if proposal_networks is not None:
+        for p in proposal_networks:
+            p.eval()
+
+    vis_voxel_aabb = torch.tensor(model.aabb, device=device)
+    # slightly expand the aabb to make sure all points are covered
+    vis_voxel_aabb[1:3] -= 1
+    vis_voxel_aabb[3:] += 1
+    aabb_min, aabb_max = torch.split(vis_voxel_aabb, 3, dim=-1)
+    aabb_length = aabb_max - aabb_min
+
+    # compute the voxel resolution for visualization
+    static_voxel_resolution = torch.ceil(
+        (aabb_max - aabb_min) / cfg.render.vis_voxel_size
+    ).long()
+    empty_static_voxels = torch.zeros(*static_voxel_resolution, device=device)
+    if is_dynamic:
+        # use a slightly smaller voxel size for dynamic voxels
+        dynamic_voxel_resolution = torch.ceil(
+            (aabb_max - aabb_min) / cfg.render.vis_voxel_size * 0.8
+        ).long()
+        all_occupied_dynamic_points = []
+        empty_dynamic_voxels = torch.zeros(*dynamic_voxel_resolution, device=device)
+
+    dataset.pixel_source.update_downscale_factor(1 / cfg.render.low_res_downscale)
+    # render per time
+    progress_bar = tqdm(range(len(dataset.full_pixel_set)//dataset.num_cams))
+    for t in progress_bar:
+        current_time = dataset.full_pixel_set[t*5]['normed_timestamps'][0]
+        cam_pcl_ = []
+        cam_pcl_color_ = []
+        progress_bar_curT = tqdm(range(len(dataset.full_pixel_set)//dataset.num_cams))
+        for j in progress_bar_curT:
+            start = j*dataset.num_cams
+            end = (j+1)*dataset.num_cams
+            for i in range(start, end):
+                data_dict = dataset.full_pixel_set[i]
+                data_dict['normed_timestamps'] = torch.ones_like(data_dict['normed_timestamps']) * current_time
+                for k, v in data_dict.items():
+                    data_dict[k] = v.to(device)
+                    # collect all patches from the first timestep
+                with torch.no_grad():
+                    render_results = render_rays(
+                        radiance_field=model,
+                        proposal_estimator=proposal_estimator,
+                        proposal_networks=proposal_networks,
+                        data_dict=data_dict,
+                        cfg=cfg,
+                        proposal_requires_grad=False,
+                    )
+                # calc the world coords according to the depth
+                depth = render_results["depth"].cuda()
+                world_coords = (
+                    data_dict["origins"] + data_dict["viewdirs"] * depth
+                )
+                selected = depth.squeeze() < 80
+                world_coords = world_coords[selected].view(-1,3).cpu()
+                semantics = render_results["semantics"][selected.cpu()]
+                # calc the semantic labels to color
+                semantics = render_results["semantics"] # [H, W, N]
+                # semantics = semantics.view(-1,semantics.shape[-1])
+                semantics = semantics[selected.cpu()]
+                posi_selected = remove_selected_points(semantics, 0)
+                world_coords = world_coords[posi_selected]
+                semantics = semantics[posi_selected]
+                if world_coords.shape[0] == 0:
+                    continue
+                cam_pcl_.append(world_coords)
+                cam_pcl_color_.append(semantics)
+            progress_bar_curT.set_description(f"Processing {j+1}/{len(dataset.full_pixel_set)//dataset.num_cams} of {t}th frame")
+        progress_bar.set_description(f"Processing {j+1}/{len(dataset.full_pixel_set)//dataset.num_cams} of {t}th frame")
+
+        vid_root = os.path.join(cfg.log_dir, 'pointcloud')
+        if not os.path.exists(vid_root):
+            os.makedirs(vid_root)
+        # use DBSCAN in current frame
+        # if denoise_method == 'DBSCAN':
+        cam_pcl, cam_pcl_color, cam_pcl_i = DBSCAN_selection_for_pointcloud(torch.cat(cam_pcl_, 0).view(-1,3), torch.cat(cam_pcl_color_, 0), min_s=[5, 10], rad=[0.5, 0.2], thre_num=500)
+        save_npz_xyzirgb(cam_pcl, (cam_pcl_color.data*255.).clamp_(0., 255.).to(dtype=torch.uint8), cam_pcl_i, vid_root, str(t).zfill(3)+'_xyzirgb_DBSCAN.npz')
+
+        cam_pcl = cam_pcl.data.cpu().numpy()
+        cam_pcl_color = (cam_pcl_color.data*255.).clamp_(0., 255.).to(dtype=torch.uint8).cpu().numpy()
+        export_pcl_ply(cam_pcl, cam_pcl_color, filepath=os.path.join(vid_root, str(t).zfill(3)+'_DBSCAN.ply'))
+        # use zscore
+        # elif denoise_method == 'zscore':
+        # cam_pcl, cam_pcl_color, cam_pcl_i, _ = z_score_selection_for_pointcloud(torch.cat(cam_pcl_, 0).view(-1,3), torch.cat(cam_pcl_color_, 0), torch.tensor([1.5,1.5,1.5], device='cpu'))
+        # save_npz_xyzirgb(cam_pcl, (cam_pcl_color.data*255.).clamp_(0., 255.).to(dtype=torch.uint8), cam_pcl_i, vid_root, str(t).zfill(3)+'_xyzirgb_Zscore.npz')
+
+        # cam_pcl = cam_pcl.data.cpu().numpy()
+        # cam_pcl_color = (cam_pcl_color.data*255.).clamp_(0., 255.).to(dtype=torch.uint8).cpu().numpy()
+        # export_pcl_ply(cam_pcl, cam_pcl_color, filepath=os.path.join(vid_root, str(t).zfill(3)+'_Zcore.ply'))
+        
 
 def visualize_scene_flow(
     cfg: OmegaConf,

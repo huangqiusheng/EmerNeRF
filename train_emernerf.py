@@ -23,7 +23,7 @@ from radiance_fields.render_utils import render_rays
 from radiance_fields.video_utils import render_pixels, save_videos
 from third_party.nerfacc_prop_net import PropNetEstimator, get_proposal_requires_grad_fn
 from utils.logging import MetricLogger, setup_logging
-from utils.visualization_tools import visualize_voxels, visualize_scene_flow
+from utils.visualization_tools import visualize_voxels, visualize_scene_flow, visualize_pointscloud, visualize_pointscloud_wholeScene
 
 logger = logging.getLogger()
 current_time = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())
@@ -67,6 +67,9 @@ def get_args_parser():
     )
     parser.add_argument(
         "--visualize_voxel", action="store_true", help="perform evaluation only"
+    )
+    parser.add_argument(
+        "--visualize_pcws", action="store_true", help="perform evaluation only"
     )
     parser.add_argument(
         "--render_data_video",
@@ -300,7 +303,7 @@ def do_evaluation(
             proposal_networks=proposal_networks,
             proposal_estimator=proposal_estimator,
             dataset=dataset.full_pixel_set,
-            compute_metrics=True,
+            compute_metrics=False,
             return_decomposition=True,
         )
         dataset.pixel_source.reset_downscale_factor()
@@ -339,7 +342,7 @@ def do_evaluation(
                 proposal_estimator=proposal_estimator,
                 dataset=dataset.test_pixel_set,
                 proposal_networks=proposal_networks,
-                compute_metrics=True,
+                compute_metrics=False,
                 return_decomposition=True,
             )
             eval_dict = {}
@@ -390,7 +393,7 @@ def do_evaluation(
                 proposal_estimator=proposal_estimator,
                 dataset=dataset.full_pixel_set,
                 proposal_networks=proposal_networks,
-                compute_metrics=True,
+                compute_metrics=False,
                 return_decomposition=True,
             )
             eval_dict = {}
@@ -518,6 +521,28 @@ def main(args):
                 save_html=True,
                 is_dynamic=cfg.nerf.model.head.enable_dynamic_branch,
             )
+        if args.visualize_pcws:
+            visualize_pointscloud_wholeScene(
+                    cfg,
+                    model,
+                    proposal_estimator,
+                    proposal_networks,
+                    dataset,
+                    device=device,
+                    save_html=True,
+                    is_dynamic=cfg.nerf.model.head.enable_dynamic_branch,
+                )
+        else:
+            visualize_pointscloud(
+                cfg,
+                model,
+                proposal_estimator,
+                proposal_networks,
+                dataset,
+                device=device,
+                save_html=True,
+                is_dynamic=cfg.nerf.model.head.enable_dynamic_branch,
+            )
         logger.info("Visualization done!")
 
     if args.eval_only:
@@ -580,6 +605,15 @@ def main(args):
             check_nan=cfg.optim.check_nan,
             reduction='none'
         )
+        if cfg.supervision.depth_norm.enable:
+            depth_norm_loss_fn = loss.DepthNormLoss(
+                loss_type=cfg.supervision.depth.line_of_sight.loss_type,
+                coef=cfg.supervision.depth.line_of_sight.loss_coef,
+                check_nan=cfg.optim.check_nan,
+                reduction='none'
+            )
+        else:
+            depth_norm_loss_fn = None
     else:
         semantics_loss_fn = None
 
@@ -695,6 +729,14 @@ def main(args):
                 pixel_loss_dict.update(
                     semantics_loss_fn(
                         render_results["semantics"],
+                        pixel_data_dict["semantics"],
+                        pixel_data_dict["semantics_c"],
+                    )
+                )
+            if depth_norm_loss_fn is not None:
+                pixel_loss_dict.update(
+                    depth_norm_loss_fn(
+                        render_results["depth"],
                         pixel_data_dict["semantics"],
                         pixel_data_dict["semantics_c"],
                     )
